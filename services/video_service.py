@@ -1,30 +1,58 @@
-'''from utils.db import get_db_connection
+from utils.db import get_db_connection
 from fastapi import HTTPException
 
-def search_videos(q=None, offering_id=None, prof=None, limit=20, offset=0):
+
+def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
     """
-    Directly queries the Videos DB.
-    Used internally by Search and Upload microservices.
+    Search videos using JOINs across:
+    - Videos
+    - CourseOfferings
+    - Courses
+    - CourseInstructors
     """
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        query = "SELECT * FROM Videos WHERE 1=1"
+        # ---- BASE QUERY ----
+        query = """
+            SELECT 
+                v.video_id,
+                v.title,
+                v.gcs_path,
+                v.uploaded_at,
+                co.course_id,
+                c.course_name,
+                v.prof_uni
+            FROM Videos v
+            JOIN CourseOfferings co ON v.offering_id = co.offering_id
+            JOIN Courses c ON co.course_id = c.course_id
+            JOIN CourseInstructors ci 
+                ON ci.offering_id = co.offering_id
+                AND ci.prof_uni = v.prof_uni
+            WHERE 1=1
+        """
+
         params = []
 
-        # Filters
+        # ---- KEYWORD FILTER ----
         if q:
-            query += " AND title LIKE %s"
+            query += " AND v.title LIKE %s"
             params.append(f"%{q}%")
-        if offering_id:
-            query += " AND offering_id = %s"
-            params.append(offering_id)
-        if prof:
-            query += " AND prof_uni LIKE %s"
-            params.append(f"%{prof}%")
 
-        query += " ORDER BY uploaded_at DESC LIMIT %s OFFSET %s"
+        # ---- COURSE FILTER ----
+        if course_id:
+            query += " AND co.course_id = %s"
+            params.append(course_id)
+        
+        # ---- PROFESSOR UNI FILTER ----
+        if prof:
+            query += " AND ci.prof_uni = %s"
+            params.append(prof)
+
+        # ---- SORT + PAGINATION ----
+        query += " ORDER BY v.uploaded_at DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
         cursor.execute(query, params)
@@ -37,37 +65,9 @@ def search_videos(q=None, offering_id=None, prof=None, limit=20, offset=0):
             "page_size": limit,
             "offset": offset,
             "links": [
-                {"rel": "self", "href": f"/videos?q={q or ''}&limit={limit}&offset={offset}"}
+                {"rel": "self", "href": f"/videos?limit={limit}&offset={offset}"}
             ],
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")'''
-
-
-# services/video_service.py
-def search_videos(q=None, offering_id=None, prof=None, limit=20, offset=0):
-    """
-    Temporary mock version — just confirms that the call reached the service.
-    """
-    print(f"[DEBUG] Received call in videos_composite_microservice")
-    print(f"[DEBUG] Params: q={q}, offering_id={offering_id}, prof={prof}, limit={limit}, offset={offset}")
-
-    # Simulate response for testing integration
-    return {
-        "message": "Received call from Search microservice",
-        "params": {
-            "q": q,
-            "offering_id": offering_id,
-            "prof": prof,
-            "limit": limit,
-            "offset": offset
-        },
-        "items": [],
-        "page_size": limit,
-        "offset": offset,
-        "links": [
-            {"rel": "self", "href": f"/videos?q={q or ''}&limit={limit}&offset={offset}"}
-        ]
-    }
-
+        raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
