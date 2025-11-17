@@ -45,7 +45,7 @@ def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
         if course_id:
             query += " AND co.course_id = %s"
             params.append(course_id)
-        
+
         # ---- PROFESSOR UNI FILTER ----
         if prof:
             query += " AND ci.prof_uni = %s"
