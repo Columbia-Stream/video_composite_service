@@ -9,6 +9,10 @@ def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
     - CourseOfferings
     - Courses
     - CourseInstructors
+
+    Adds item-level HATEOAS linked data:
+    - self link  -> /videos/<video_id>
+    - course link -> /courses/<course_id>
     """
 
     try:
@@ -60,6 +64,14 @@ def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
         cursor.close()
         conn.close()
 
+        # ---- Add item-level HATEOAS links ----
+        for item in rows:
+            item["links"] = [
+                {"rel": "self", "href": f"/videos/{item['video_id']}"},
+                {"rel": "course", "href": f"/courses/{item['course_id']}"}
+            ]
+
+        # ---- Collection-level response ----
         return {
             "items": rows,
             "page_size": limit,
