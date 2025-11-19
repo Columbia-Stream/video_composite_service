@@ -83,3 +83,35 @@ def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
+
+
+def add_videodata(video_id: str = None, offering_id: int = None, prof_uni: str = None, title: str = None, gcs_path: str = None):
+    """
+    Add video metadata:
+    
+    """
+    insert_query = """
+        INSERT INTO Videos (video_id, offering_id, prof_uni, title, gcs_path)
+        VALUES (%s, %s, %s, %s, %s)
+    """
+    
+    # 2. Create a tuple of data in the exact order of the columns
+    data_tuple = (video_id, offering_id, prof_uni, title, gcs_path)
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(insert_query, data_tuple)
+        
+        # 4. CRITICAL: Commit the transaction to save the data
+        conn.commit()
+
+        # 5. Clean up
+        cursor.close()
+        conn.close()
+
+        return {
+            "message": "Video metadata added successfully"
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
