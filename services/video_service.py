@@ -9,10 +9,6 @@ def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
     - CourseOfferings
     - Courses
     - CourseInstructors
-
-    Adds item-level HATEOAS linked data:
-    - self link  -> /videos/<video_id>
-    - course link -> /courses/<course_id>
     """
 
     try:
@@ -71,7 +67,7 @@ def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
                 {"rel": "course", "href": f"/courses/{item['course_id']}"}
             ]
 
-        # ---- Collection-level response ----
+        # ---- Final response ----
         return {
             "items": rows,
             "page_size": limit,
@@ -85,33 +81,82 @@ def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
         raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
 
 
-def add_videodata(video_id: str = None, offering_id: int = None, prof_uni: str = None, title: str = None, gcs_path: str = None):
+# -----------------------------------------------------------
+# Insert video metadata
+# -----------------------------------------------------------
+def add_videodata(video_id: str = None, offering_id: int = None,
+                  prof_uni: str = None, title: str = None, gcs_path: str = None):
     """
-    Add video metadata:
-    
+    Add video metadata into Videos table.
     """
+
     insert_query = """
         INSERT INTO Videos (video_id, offering_id, prof_uni, title, gcs_path)
         VALUES (%s, %s, %s, %s, %s)
     """
-    
-    # 2. Create a tuple of data in the exact order of the columns
+
     data_tuple = (video_id, offering_id, prof_uni, title, gcs_path)
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
+
         cursor.execute(insert_query, data_tuple)
-        
-        # 4. CRITICAL: Commit the transaction to save the data
         conn.commit()
 
-        # 5. Clean up
         cursor.close()
         conn.close()
 
-        return {
-            "message": "Video metadata added successfully"
-        }
+        return {"message": "Video metadata added successfully"}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
+
+
+# -----------------------------------------------------------
+# Fetch a single video for Watch Video Page
+# -----------------------------------------------------------
+def get_video_by_id(video_id: str):
+    """
+    Fetch a single video's metadata by video_id.
+    Includes joins for course_name and course_id.
+    """
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        query = """
+            SELECT 
+                v.video_id,
+                v.title,
+                v.gcs_path,
+                v.uploaded_at,
+                co.course_id,
+                c.course_name,
+                v.prof_uni
+            FROM Videos v
+            LEFT JOIN CourseOfferings co ON v.offering_id = co.offering_id
+            LEFT JOIN Courses c ON co.course_id = c.course_id
+            WHERE v.video_id = %s
+        """
+
+        cursor.execute(query, (video_id,))
+        row = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Video not found")
+
+        # HATEOAS item link
+        row["links"] = [
+            {"rel": "self", "href": f"/videos/{video_id}"},
+            {"rel": "course", "href": f"/courses/{row['course_id']}"} if row["course_id"] else {}
+        ]
+
+        return row
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")

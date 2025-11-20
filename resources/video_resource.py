@@ -1,8 +1,16 @@
 from fastapi import APIRouter, Query, Body, HTTPException
-from services.video_service import search_videos, add_videodata
+from services.video_service import (
+    search_videos,
+    add_videodata,
+    get_video_by_id,   # NEW IMPORT
+)
 
 router = APIRouter()
 
+
+# --------------------------------------------------------
+# 1. SEARCH VIDEOS
+# --------------------------------------------------------
 @router.get("/videos")
 def list_videos(
     q: str = Query(None),
@@ -11,41 +19,43 @@ def list_videos(
     limit: int = 20,
     offset: int = 0,
 ):
+    """
+    Returns list of videos (search + filters).
+    """
     return search_videos(q, course_id, prof, limit, offset)
 
 
+# --------------------------------------------------------
+# 2. ADD VIDEO METADATA (FROM UPLOAD SERVICE)
+# --------------------------------------------------------
 @router.post("/videos/metadata")
 def store_video_metadata(
-    # Use 'str' for the video_id, as it's a UUID string
-    video_id: str = Body(...), 
-    
-    # 'int' is correct
-    offering_id: int = Body(...), 
-    
-    # 'str' is correct
-    prof_uni: str = Body(...), 
-    
-    # 'text' is not a valid Python type hint, use 'str'
-    title: str = Body(...), 
-    
-    # This field *must* match the JSON key from the Upload service
-    # which we defined as 'raw_gcs_path'
-    gcs_path: str = Body(...) 
+    video_id: str = Body(...),
+    offering_id: int = Body(...),
+    prof_uni: str = Body(...),
+    title: str = Body(...),
+    gcs_path: str = Body(...),
 ):
     """
-    Receives metadata from the Upload service (via JSON body)
-    and passes it to the database insertion function.
+    Receives video metadata from upload service.
+    Stores in Videos table.
     """
     try:
-        # Call the database function, mapping the incoming JSON key 
-        # 'raw_gcs_path' to the function's 'gcs_path' argument.
         return add_videodata(
-            video_id=video_id, 
-            offering_id=offering_id, 
-            prof_uni=prof_uni, 
-            title=title, 
-            gcs_path=gcs_path # <-- This mapping is critical
+            video_id=video_id,
+            offering_id=offering_id,
+            prof_uni=prof_uni,
+            title=title,
+            gcs_path=gcs_path,
         )
     except Exception as e:
-        # Catch errors from add_videodata
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/videos/{video_id}")
+def fetch_single_video(video_id: str):
+    """
+    Returns metadata for a single video by ID.
+    Composite service calls this endpoint.
+    """
+    return get_video_by_id(video_id)
