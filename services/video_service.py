@@ -2,11 +2,14 @@ from utils.db import get_db_connection
 from fastapi import HTTPException
 
 
-def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
+# -----------------------------------------------------------
+# SEARCH WITH year + semester
+# -----------------------------------------------------------
+def search_videos(q=None, course_id=None, prof=None, year=None, semester=None, limit=20, offset=0):
     """
-    Search videos using JOINs across:
+    Search videos using JOINs:
     - Videos
-    - CourseOfferings
+    - CourseOfferings (with year + semester)
     - Courses
     - CourseInstructors
     """
@@ -15,7 +18,6 @@ def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        # ---- BASE QUERY ----
         query = """
             SELECT 
                 v.video_id,
@@ -23,6 +25,8 @@ def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
                 v.gcs_path,
                 v.uploaded_at,
                 co.course_id,
+                co.year,
+                co.semester,
                 c.course_name,
                 v.prof_uni
             FROM Videos v
@@ -36,38 +40,48 @@ def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
 
         params = []
 
-        # ---- KEYWORD FILTER ----
+        # Keyword search
         if q:
             query += " AND v.title LIKE %s"
             params.append(f"%{q}%")
 
-        # ---- COURSE FILTER ----
+        # Course ID filter
         if course_id:
             query += " AND co.course_id = %s"
             params.append(course_id)
 
-        # ---- PROFESSOR UNI FILTER ----
+        # Professor UNI filter
         if prof:
             query += " AND ci.prof_uni = %s"
             params.append(prof)
 
-        # ---- SORT + PAGINATION ----
+        # NEW: Year filter
+        if year:
+            query += " AND co.year = %s"
+            params.append(year)
+
+        # NEW: Semester filter
+        if semester:
+            query += " AND co.semester = %s"
+            params.append(semester)
+
+        # Ordering + pagination
         query += " ORDER BY v.uploaded_at DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
         cursor.execute(query, params)
         rows = cursor.fetchall()
+
         cursor.close()
         conn.close()
 
-        # ---- Add item-level HATEOAS links ----
+        # Add HATEOAS links
         for item in rows:
             item["links"] = [
                 {"rel": "self", "href": f"/videos/{item['video_id']}"},
                 {"rel": "course", "href": f"/courses/{item['course_id']}"}
             ]
 
-        # ---- Final response ----
         return {
             "items": rows,
             "page_size": limit,
@@ -81,8 +95,9 @@ def search_videos(q=None, course_id=None, prof=None, limit=20, offset=0):
         raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
 
 
+
 # -----------------------------------------------------------
-# Insert video metadata
+# Insert video metadata (REQUIRED)
 # -----------------------------------------------------------
 def add_videodata(video_id: str = None, offering_id: int = None,
                   prof_uni: str = None, title: str = None, gcs_path: str = None):
@@ -112,69 +127,43 @@ def add_videodata(video_id: str = None, offering_id: int = None,
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
 
-# -----------------------------------------------------------
-# Get professor by offeringID
-# -----------------------------------------------------------
 
+
+# -----------------------------------------------------------
+# Get instructors by offering_id (REQUIRED)
+# -----------------------------------------------------------
 def get_instructors_by_offering(offering_id: int):
-    """
-    Retrieves all attributes (columns) from the CourseInstructors table 
-    for a specific offering_id.
-    
-    Args:
-        offering_id: The ID of the course offering (input parameter).
-        
-    Returns:
-        A list of dictionaries, where each dictionary represents a row 
-        (e.g., {'prof_uni': 'ts3747'}).
-    """
-    
-    # 1. SQL Query using %s placeholder (required for mysql-connector)
     query = """
         SELECT * FROM CourseInstructors 
         WHERE offering_id = %s
     """
-    
-    # 2. Data parameter tuple
-    data_tuple = (offering_id,) # CRITICAL: Must be a tuple, even with one element
 
     try:
-        # Use the context manager to automatically close the connection
         with get_db_connection() as conn:
-            # Use dictionary=True to get results as dicts instead of tuples
-            cursor = conn.cursor(dictionary=True) 
-
-            cursor.execute(query, data_tuple)
-            
-            # Fetch all rows that match the query
-            rows = cursor.fetchall()
-
-            # The connection and cursor are closed automatically by the 'with' block
-
-            return rows
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, (offering_id,))
+            return cursor.fetchall()
 
     except Exception as e:
-        # Re-raise the error as an HTTPException for the API layer to handle
         raise HTTPException(status_code=500, detail=f"DB error retrieving instructors: {str(e)}")
 
+
+
 # -----------------------------------------------------------
-# Insert offering_id and professor association 
+# Add new offering_id → prof association (REQUIRED)
 # -----------------------------------------------------------
 def add_association(offering_id: int = None, prof_uni: str = None):
-   
 
     insert_query = """
         INSERT INTO CourseInstructors (offering_id, prof_uni)
         VALUES (%s, %s)
     """
 
-    data_tuple = (offering_id, prof_uni)
-
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        cursor.execute(insert_query, data_tuple)
+        cursor.execute(insert_query, (offering_id, prof_uni))
         conn.commit()
 
         cursor.close()
@@ -185,14 +174,12 @@ def add_association(offering_id: int = None, prof_uni: str = None):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
 
+
+
 # -----------------------------------------------------------
-# Fetch a single video for Watch Video Page
+# Fetch a single video (REQUIRED)
 # -----------------------------------------------------------
 def get_video_by_id(video_id: str):
-    """
-    Fetch a single video's metadata by video_id.
-    Includes joins for course_name and course_id.
-    """
 
     try:
         conn = get_db_connection()
@@ -222,7 +209,6 @@ def get_video_by_id(video_id: str):
         if not row:
             raise HTTPException(status_code=404, detail="Video not found")
 
-        # HATEOAS item link
         row["links"] = [
             {"rel": "self", "href": f"/videos/{video_id}"},
             {"rel": "course", "href": f"/courses/{row['course_id']}"} if row["course_id"] else {}
@@ -234,41 +220,21 @@ def get_video_by_id(video_id: str):
         raise HTTPException(status_code=500, detail=f"DB error: {str(e)}")
 
 
-# -----------------------------------------------------------
-# Get professor by offeringID
-# -----------------------------------------------------------
 
+# -----------------------------------------------------------
+# Fetch all offerings (REQUIRED)
+# -----------------------------------------------------------
 def get_offerings():
-    """
-    Retrieves all offerings
 
-        
-    Returns:
-        A list of dictionaries, where each dictionary represents a row 
-        (e.g., {'prof_uni': 'ts3747'}).
-    """
-    
-    # 1. SQL Query using %s placeholder (required for mysql-connector)
     query = """
         SELECT * FROM CourseOfferings
     """
-    
-    
+
     try:
-        # Use the context manager to automatically close the connection
         with get_db_connection() as conn:
-            # Use dictionary=True to get results as dicts instead of tuples
-            cursor = conn.cursor(dictionary=True) 
-
+            cursor = conn.cursor(dictionary=True)
             cursor.execute(query)
-            
-            # Fetch all rows that match the query
-            rows = cursor.fetchall()
-
-            # The connection and cursor are closed automatically by the 'with' block
-
-            return rows
+            return cursor.fetchall()
 
     except Exception as e:
-        # Re-raise the error as an HTTPException for the API layer to handle
-        raise HTTPException(status_code=500, detail=f"DB error retrieving instructors: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"DB error retrieving offerings: {str(e)}")

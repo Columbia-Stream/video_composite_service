@@ -10,7 +10,6 @@ from services.video_service import (
 
 router = APIRouter()
 
-
 # --------------------------------------------------------
 # 1. SEARCH VIDEOS
 # --------------------------------------------------------
@@ -19,17 +18,16 @@ def list_videos(
     q: str = Query(None),
     course_id: str = Query(None),
     prof: str = Query(None),
+    year: int = Query(None),         # NEW
+    semester: str = Query(None),     # NEW
     limit: int = 20,
     offset: int = 0,
 ):
-    """
-    Returns list of videos (search + filters).
-    """
-    return search_videos(q, course_id, prof, limit, offset)
+    return search_videos(q, course_id, prof, year, semester, limit, offset)
 
 
 # --------------------------------------------------------
-# 2. ADD VIDEO METADATA (FROM UPLOAD SERVICE)
+# 2. ADD VIDEO METADATA
 # --------------------------------------------------------
 @router.post("/videos/metadata")
 def store_video_metadata(
@@ -39,37 +37,18 @@ def store_video_metadata(
     title: str = Body(...),
     gcs_path: str = Body(...),
 ):
-    """
-    Receives video metadata from upload service.
-    Stores in Videos table.
-    """
     try:
-        print(f"Storing metadata for video_id: {video_id}, offering_id: {offering_id}, prof_uni: {prof_uni}")
         existing_instructors = get_instructors_by_offering(offering_id)
-        print(f"Existing instructors for offering {offering_id}: {existing_instructors}")
-        # Extract just the unis into a set for fast lookup
         associated_unis = {inst['prof_uni'] for inst in existing_instructors}
 
-        # 2. CHECK 1: Is the offering already associated with ANY professor?
         if existing_instructors:
-            
-            # CHECK 2: If associated, does the current prof_uni match one of the associated ones?
             if prof_uni not in associated_unis:
-                # If the prof is different, return an error
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Offering ID {offering_id} is already taught by: {', '.join(associated_unis)}. Cannot associate a different professor ({prof_uni})."
+                    detail=f"Offering {offering_id} already taught by {', '.join(associated_unis)}."
                 )
-            
-            # If the professor is already associated, continue to Step 4 (insertion)
-
-        # 3. CHECK 3: If no association exists (first time video is uploaded for this offering)
         else:
-            # Add a row to the CourseInstructors table
             add_association(offering_id=offering_id, prof_uni=prof_uni)
-            # Log successful association (optional)
-            print(f"New association added: Offering {offering_id} -> Prof {prof_uni}")
-
 
         return add_videodata(
             video_id=video_id,
@@ -84,17 +63,9 @@ def store_video_metadata(
 
 @router.get("/videos/{video_id}")
 def fetch_single_video(video_id: str):
-    """
-    Returns metadata for a single video by ID.
-    Composite service calls this endpoint.
-    """
     return get_video_by_id(video_id)
 
 
 @router.post("/videos/offer")
-def list_offerings(
-):
-    """
-    Returns list of offerings.
-    """
+def list_offerings():
     return get_offerings()
