@@ -5,7 +5,9 @@ from services.video_service import (
     get_video_by_id,
     get_instructors_by_offering,
     add_association,
-    get_offerings
+    get_offerings,
+    get_courses,
+    get_prof_offerings
 )
 
 router = APIRouter()
@@ -69,3 +71,11 @@ def fetch_single_video(video_id: str):
 @router.post("/videos/offer")
 def list_offerings():
     return get_offerings()
+
+@router.get("/videos/courses")
+def list_courses():
+    return get_courses()
+
+@router.get("/videos/prof_offer")
+def list_prof_offerings():
+    return get_prof_offerings()

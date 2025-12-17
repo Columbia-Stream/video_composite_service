@@ -238,3 +238,38 @@ def get_offerings():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error retrieving offerings: {str(e)}")
+    
+
+def get_courses():
+
+    query = """
+        SELECT * FROM Courses
+    """
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query)
+            return cursor.fetchall()
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error retrieving offerings: {str(e)}")
+    
+def get_prof_offerings(prof_uni: str):
+
+    query = """
+        SELECT * FROM CourseOfferings 
+        WHERE offering_id NOT IN (
+            SELECT offering_id FROM CourseInstructors WHERE prof_uni != %s
+        )
+    """
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, (prof_uni,))
+            return cursor.fetchall()
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error retrieving offerings: {str(e)}")
+
