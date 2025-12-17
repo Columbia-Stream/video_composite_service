@@ -72,10 +72,11 @@ def fetch_single_video(video_id: str):
 def list_offerings():
     return get_offerings()
 
-@router.get("/videos/courses")
+@router.post("/videos/courses")
 def list_courses():
+    print("Fetching courses...")
     return get_courses()
 
-@router.get("/videos/prof_offer")
-def list_prof_offerings():
-    return get_prof_offerings()
+@router.post("/videos/prof_offer/{prof_uni}")
+def list_prof_offerings(prof_uni: str):
+    return get_prof_offerings(prof_uni)
